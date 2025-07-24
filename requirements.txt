@@ -1,0 +1,10 @@
+numpy
+pandas
+torch
+jaxtyping
+pytest
+resource
+psutil
+tiktoken
+einops
+loguru
