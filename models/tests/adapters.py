@@ -10,6 +10,8 @@ import torch
 from torch import Tensor
 
 from models.tokenizer.bpe import BPETokenizer
+from models.transformer.embedding import Embedding
+from models.transformer.linear import Linear
 
 
 def run_linear(
@@ -30,8 +32,10 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-
-    raise NotImplementedError
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    linear = Linear(d_in, d_out, device=device)
+    linear.weights.data.copy_(weights)
+    return linear(in_features)
 
 
 def run_embedding(
@@ -52,8 +56,10 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    emb = Embedding(vocab_size, d_model)
+    emb.weights.data.copy_(weights)
+    return emb(token_ids)
 
 
 def run_swiglu(
