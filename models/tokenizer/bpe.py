@@ -4,57 +4,14 @@ import re
 import time
 from collections import defaultdict, Counter
 from multiprocessing import Pool
-from typing import Union
+from typing import Union, BinaryIO
+
+import regex
 from loguru import logger
 
 from models.tokenizer.consts import BPEConstant
 from models.utils.linkedlist import *
-
-
-class PairPosManager:
-    def __init__(self, indices: list[int]):
-        self.pos_dict: dict[tuple[int, int], list[Node]] = defaultdict(list)
-        self.index_list: LinkedList = LinkedList(indices)
-
-        cur = self.index_list.head
-        while cur:
-            if cur.next:
-                self.pos_dict[(cur.data, cur.next.data)].append(cur)
-            cur = cur.next
-
-    def merge_pair(self, new_index: int, pair: tuple[int, int], counter: Counter):
-        start_nodes = self.pos_dict[pair]
-        if pair in counter:
-            counter.pop(pair)
-
-        for node in start_nodes:
-            new_node = Node(new_index, node.prev, node.next.next)
-
-            if node.prev:
-                prev_pair = (node.prev.data, node.data)
-                new_pair = (node.prev.data, new_index)
-                counter[prev_pair] -= 1
-                counter[new_pair] += 1
-
-                self.pos_dict[prev_pair].remove(node.prev)
-                self.pos_dict[new_pair].append(node.prev)
-
-                node.prev.next = new_node
-            else:
-                self.index_list.head = new_node
-
-            if node.next.next:
-                next_pair = (node.next.data, node.next.next.data)
-                new_pair = (new_index, node.next.next.data)
-                counter[next_pair] -= 1
-                counter[new_pair] += 1
-
-                self.pos_dict[next_pair].remove(node.next)
-                self.pos_dict[new_pair].append(new_node)
-
-                node.next.next.prev = new_node
-            else:
-                self.index_list.tail = new_node
+from models.utils.time_utils import time_cost
 
 
 class BPETokenizer:
@@ -108,59 +65,103 @@ class BPETokenizer:
         bytes_list = list(map(self.index2bytes.get, indices))
         return b"".join(bytes_list).decode(encoding=BPEConstant.ENCODING)
 
+    @time_cost
     def fit_file(self, input_path: Union[str, os.PathLike]):
-        with open(input_path, mode='r', encoding=BPEConstant.ENCODING) as file:
-            start = time.time()
-            text = file.read()
-            logger.info('read file cost: {}', time.time() - start)
+        chunks = self._read_file_to_chunks(input_path)
+        num_processes = min(len(chunks), os.cpu_count())
 
-            self.fit(text)
+        with Pool(processes=num_processes) as pool:
+            results = pool.map(self._split_by_patterns, chunks)
+        tokens: list[list[int]] = [list(token) for token_list in results for token in token_list]
+        self.do_fit(tokens)
+
+    def _merge_pair(self, counter: defaultdict[tuple[int, int], int],
+                    pos_index: defaultdict[tuple[int, int], set[int]],
+                    tokens: list[list[int]], pair: tuple[int, int], new_index: int):
+
+        for pos in pos_index[pair]:
+            token_indices = tokens[pos]
+            new_indices = []
+            inner_pos_list = []
+
+            i = 0
+            while i < len(token_indices):
+                if i + 1 < len(token_indices) \
+                        and pair[0] == token_indices[i] \
+                        and pair[1] == token_indices[i + 1]:
+                    inner_pos_list.append(len(new_indices))
+                    new_indices.append(new_index)
+
+                    if i > 0 and (token_indices[i - 1], token_indices[i]) != pair:
+                        counter[(token_indices[i - 1], pair[0])] -= 1
+
+                    if i + 2 < len(token_indices) and (token_indices[i + 1], token_indices[i + 2]) != pair:
+                        counter[(token_indices[i + 1], token_indices[i + 2])] -= 1
+
+                    i += 2
+                else:
+                    new_indices.append(token_indices[i])
+                    i += 1
+
+            for j in range(len(inner_pos_list)):
+                cur = inner_pos_list[j]
+                if cur > 0 and (j == 0 or inner_pos_list[j - 1] != new_indices[cur - 1]):
+                    counter[(new_indices[cur - 1], new_indices[cur])] += 1
+                    pos_index[(new_indices[cur - 1], new_indices[cur])].add(pos)
+
+                if cur + 1 < len(inner_pos_list):
+                    counter[(new_indices[cur], new_indices[cur + 1])] += 1
+                    pos_index[(new_indices[cur], new_indices[cur + 1])].add(pos)
+
+        counter.pop(pair)
+        pos_index.pop(pair)
+
+    def _read_file_to_chunks(self, input_path: Union[str, os.PathLike]) -> list[str]:
+        chunks = []
+
+        with open(input_path, mode='r', encoding=BPEConstant.ENCODING) as file:
+            while (text := file.read(BPEConstant.CHUNK_SIZE)) != '':
+                chunks.append(text)
+
+        return chunks
+
+    def _split_by_patterns(self, text: str) -> list[bytes]:
+        bytes_list = []
+        parts = re.split(self.specials_pattern, text)
+
+        for part in parts:
+            tokens = regex.findall(BPEConstant.PRETOK_PATTERN, part)
+            bytes_list += [token.encode(encoding=BPEConstant.ENCODING) for token in tokens]
+
+        return bytes_list
 
     def fit(self, text: str):
-        start = time.time()
+        results = self._split_by_patterns(text)
+        tokens: list[list[int]] = [list(token) for token in results]
+        self.do_fit(tokens)
+
+    @time_cost
+    def do_fit(self, tokens: list[list[int]]):
+        counter: defaultdict[tuple[int, int], int] = defaultdict(int)
+        pos_index: defaultdict[tuple[int, int], set[int]] = defaultdict(set)
+
+        for i, token in enumerate(tokens):
+            for pair in zip(token, token[1:]):
+                counter[pair] += 1
+                pos_index[pair].add(i)
+
         num_merge = max(0, self.vocab_size - len(self.special_tokens) - BPEConstant.BASE_VOCAB_SIZE)
-        logger.info('num merge: {}', num_merge)
-        cur_vocab_size = len(self.index2bytes)
-        split_text = self._get_split_text(text)
-        split_indices = [list(map(int, content.encode(encoding=BPEConstant.ENCODING))) for content in split_text]
-        logger.info('split indices cost: {}', time.time() - start)
-
-        count_time = 0.0
-        merge_time = 0.0
-        start = time.time()
-        counter = Counter()
-        pair_managers: list[PairPosManager] = []
-
-        count_start = time.time()
-        for indices in split_indices:
-            counter.update(zip(indices, indices[1:]))
-            pair_managers.append(PairPosManager(indices))
-        count_time += time.time() - count_start
-
         for i in range(num_merge):
             max_count_pair = max(counter.items(), key=lambda x: (x[1], x[0][0], x[0][1]))[0]
             left, right = max_count_pair
-            new_index = cur_vocab_size + i
+            new_index = len(self.index2bytes)
 
             self.merges[max_count_pair] = new_index
             new_bytes = self.index2bytes[left] + self.index2bytes[right]
             self.index2bytes[new_index] = new_bytes
             self.bytes2index[new_bytes] = new_index
 
-            start_2 = time.time()
-            for manager in pair_managers:
-                manager.merge_pair(new_index, max_count_pair, counter)
-            merge_time += time.time() - start_2
-
-        logger.info('train cost: {}', time.time() - start)
-        logger.info('count total cost: {}', count_time)
-        logger.info('merge total cost: {}', merge_time)
-
-    def _get_split_text(self, text: str) -> list[str]:
-        if not self.special_tokens:
-            return [text]
-        else:
-            return re.split(self.specials_pattern, text)
+            self._merge_pair(counter, pos_index, tokens, max_count_pair, new_index)
 
     def _merge(self, indices: list[int], pair: tuple[int, int],
                new_index: int, counter: Counter = None,
