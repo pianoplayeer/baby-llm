@@ -11,7 +11,7 @@ from models.utils.param_utils import norm_init_params
 
 class Linear(nn.Module):
     def __init__(self, in_features, out_features, device=None, dtype=None):
-        super().__init__()
+        super(Linear, self).__init__()
 
         self.in_features = in_features
         self.out_features = out_features
