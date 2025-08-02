@@ -42,7 +42,6 @@ class BPETokenizer:
         self.bytes2index = {v: k for k, v in self.index2bytes.items()}
         self.merges = {}
 
-    @time_cost
     def encode(self, text: str) -> list[int]:
         indices: list[int] = []
         split_text = [text]

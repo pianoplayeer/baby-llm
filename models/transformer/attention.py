@@ -19,7 +19,6 @@ def softmax(x: torch.Tensor, dim: int):
     return x / x.sum(dim=dim, keepdim=True)
 
 
-@time_cost
 def scaled_dot_product_attention(
     q: Float[torch.Tensor, "... seq_len d_k"],
     k: Float[torch.Tensor, "... seq_len d_k"],
@@ -27,7 +26,6 @@ def scaled_dot_product_attention(
     mask: Float[torch.Tensor, "seq_len seq_len"]
 ):
     d_k = q.shape[-1]
-    logger.info(f'q shape: {q.shape}, k shape: {k.shape}, d_k: {d_k}')
     attention_scores = einops.einsum(q, k, "... q d_k, ... k d_k -> ... q k") / math.sqrt(d_k)
 
     if mask is not None:

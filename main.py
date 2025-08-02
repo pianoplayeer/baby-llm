@@ -28,12 +28,14 @@ if __name__ == '__main__':
     faulthandler.enable()
     tokenizer = load_bpe_tokenizer('./models/data/bpe.pickle')
 
+    logger.add("./train.log", rotation="10 MB", encoding="utf-8", level="INFO")
+
     logger.info('start transfer data')
     train_chunks = read_file_to_chunks('./models/data/TinyStoriesV2-GPT4-train.txt')
     test_chunks = read_file_to_chunks('./models/data/TinyStoriesV2-GPT4-valid.txt')
     logger.info('complete data transfer')
 
-    device = 'cpu'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     logger.info(f'device: {device}')
     model_params = {
         'd_model': 512,
@@ -42,19 +44,19 @@ if __name__ == '__main__':
         'max_seq_len': 256,
         'vocab_size': 10000,
         'theta': 10000,
-        'num_layers': 4,
+        'num_layers': 8,
         'device': device
     }
     optim_params = {
     }
 
     scheduler_params = {
-        'lr_max': 1,
-        'lr_min': 0.001,
-        't_w': 20,
-        't_c': 50,
+        'lr_max': 0.005,
+        'lr_min': 1e-5,
+        't_w': 100,
+        't_c': 5000,
     }
 
     train_llm(tokenizer, train_chunks, test_chunks, TransformerLM, model_params,
               AdamW, optim_params, cross_entropy_loss, cos_lr_schedule, scheduler_params,
-              max_l2_norm=5, batch_size=128, epochs=10000, context_len=256, device=device)
+              max_l2_norm=8, batch_size=64, epochs=10000, context_len=256, device=device)

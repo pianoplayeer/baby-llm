@@ -26,6 +26,7 @@ def train_llm(tokenizer: BPETokenizer, train_chunks: list[str], test_chunks: lis
               batch_size: int, context_len: int, epochs: int, eps=1e-5, device=None) -> nn.Module:
 
     model = model_type(**model_params)
+    model = torch.compile(model)
     optimizer = optim_type(model.parameters(), **optim_params)
 
     train_losses = []
@@ -34,6 +35,7 @@ def train_llm(tokenizer: BPETokenizer, train_chunks: list[str], test_chunks: lis
     # train
     logger.info('start training loop')
     for t in range(1, epochs + 1):
+        logger.info(f'available gpu mem: {torch.cuda.mem_get_info()[0]}')
         optimizer.zero_grad()
         chunk_idx = np.random.randint(0, len(train_chunks))
         indices = tokenizer.encode(train_chunks[chunk_idx])
@@ -54,10 +56,11 @@ def train_llm(tokenizer: BPETokenizer, train_chunks: list[str], test_chunks: lis
         indices = tokenizer.encode(test_chunks[chunk_idx])
         test_seqs, test_targets = load_data(np.array(indices), batch_size, context_len, device)
 
-        pred = model(test_seqs)
-        loss = loss_func(pred, test_targets)
-        test_losses.append(loss)
-        logger.info(f'epoch {t}, test loss: {loss}')
+        with torch.no_grad():
+            pred = model(test_seqs)
+            loss = loss_func(pred, test_targets)
+            test_losses.append(loss)
+            logger.info(f'epoch {t}, test loss: {loss}')
 
         if t % 10 == 0 or t == epochs:
             save_checkpoint(model, optimizer, t, f'./model_checkpoint_{t}')

@@ -1,6 +1,6 @@
 numpy
 pandas
-torch==2.7.0+cu128
+torch==2.5.1+cu124
 jaxtyping
 pytest
 resource
@@ -8,3 +8,4 @@ psutil
 tiktoken
 einops
 loguru
+matplotlib

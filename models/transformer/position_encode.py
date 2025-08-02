@@ -47,7 +47,6 @@ class RotaryPositionEncode(nn.Module):
             token_positions = torch.arange(seq_len)
 
         rotate_mats = self.rotate_matrix_table[token_positions]
-        x = x.to(device=self.device)
 
         x_rotated = rotate_mats @ x.unsqueeze(-1)
         x_rotated = x_rotated.squeeze(-1)
