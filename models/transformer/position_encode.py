@@ -23,7 +23,7 @@ class RotaryPositionEncode(nn.Module):
         self.device: Union[torch.device, None] = device
 
         self.rotate_matrix_table = self.gen_rotate_matrix()
-        self.register_buffer('rotate_matrix', self.rotate_matrix_table)
+        self.register_buffer('rotate_matrix', self.rotate_matrix_table, persistent=False)
 
     def gen_rotate_block(self, seq_pos, block_index) -> torch.Tensor:
         angle = torch.tensor(seq_pos / self.theta ** (2 * block_index / self.d_model))

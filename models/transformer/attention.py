@@ -6,6 +6,7 @@ import einops
 import torch
 import torch.nn as nn
 from jaxtyping import Float
+from loguru import logger
 
 from models.transformer.linear import Linear
 from models.transformer.position_encode import RotaryPositionEncode
@@ -26,6 +27,7 @@ def scaled_dot_product_attention(
     mask: Float[torch.Tensor, "seq_len seq_len"]
 ):
     d_k = q.shape[-1]
+    logger.info(f'q shape: {q.shape}, k shape: {k.shape}, d_k: {d_k}')
     attention_scores = einops.einsum(q, k, "... q d_k, ... k d_k -> ... q k") / math.sqrt(d_k)
 
     if mask is not None:
@@ -42,6 +44,7 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.use_causal_mask = use_causal_mask
         self.use_rope = use_rope
+        self.device = device
         self.rope = RotaryPositionEncode(theta, d_model // num_heads, max_seq_len, device) if use_rope else None
         self.token_positions = token_positions
 
@@ -66,7 +69,7 @@ class MultiHeadAttention(nn.Module):
 
         causal_mask = None
         if self.use_causal_mask:
-            causal_mask = torch.ones(seq_len, seq_len).tril(diagonal=0).bool().cuda()
+            causal_mask = torch.ones(seq_len, seq_len).tril(diagonal=0).bool().to(device=self.device)
         multi_heads = scaled_dot_product_attention(q, k, v, causal_mask)
         multi_heads = einops.rearrange(multi_heads, "... h seq_len dim -> ... seq_len (h dim)")
 

@@ -1,15 +1,13 @@
 # -- coding: utf-8 --
 import os
 import re
-import time
 from collections import defaultdict, Counter
 from multiprocessing import Pool
-from typing import Union, BinaryIO
 
 import regex
-from loguru import logger
 
 from models.tokenizer.consts import BPEConstant
+from models.utils.file_utils import read_file_to_chunks
 from models.utils.linkedlist import *
 from models.utils.time_utils import time_cost
 
@@ -44,6 +42,7 @@ class BPETokenizer:
         self.bytes2index = {v: k for k, v in self.index2bytes.items()}
         self.merges = {}
 
+    @time_cost
     def encode(self, text: str) -> list[int]:
         indices: list[int] = []
         split_text = [text]
@@ -67,7 +66,7 @@ class BPETokenizer:
 
     @time_cost
     def fit_file(self, input_path: Union[str, os.PathLike]):
-        chunks = self._read_file_to_chunks(input_path)
+        chunks = read_file_to_chunks(input_path)
         num_processes = min(len(chunks), os.cpu_count())
 
         with Pool(processes=num_processes) as pool:
@@ -115,15 +114,6 @@ class BPETokenizer:
 
         counter.pop(pair)
         pos_index.pop(pair)
-
-    def _read_file_to_chunks(self, input_path: Union[str, os.PathLike]) -> list[str]:
-        chunks = []
-
-        with open(input_path, mode='r', encoding=BPEConstant.ENCODING) as file:
-            while (text := file.read(BPEConstant.CHUNK_SIZE)) != '':
-                chunks.append(text)
-
-        return chunks
 
     def _split_by_patterns(self, text: str) -> list[bytes]:
         bytes_list = []
@@ -199,14 +189,22 @@ class BPETokenizer:
         return new_indices[:idx]
 
 
-if __name__ == '__main__':
-    a = 'hello world, nice to meet you,<|end|> how are you'
-    tokenizer = BPETokenizer(5, ['<|end|>'])
-    tokenizer.fit(a)
-
-    indices = tokenizer.encode("worldto <|end|>you")
-    revert = tokenizer.decode(indices)
-
-    print('origin: ' + "worldto <|end|>you")
-    print("encode: " + str(indices))
-    print("decode: " + revert)
+# if __name__ == '__main__':
+#     a = 'hello world, nice to meet you,<|endoftext|> how are you'
+#     tokenizer = BPETokenizer(5, ['<|endoftext|>'])
+#     tokenizer.fit(a)
+#
+#     indices = tokenizer.encode("worldto <|endoftext|>you")
+#     revert = tokenizer.decode(indices)
+#
+#     print('origin: ' + "worldto <|endoftext|>you")
+#     print("encode: " + str(indices))
+#     print("decode: " + revert)
+#
+#     tokenizer = load_bpe_tokenizer(BPEConstant.BPE_PATH)
+#     indices = tokenizer.encode("worldto <|endoftext|>you")
+#     revert = tokenizer.decode(indices)
+#
+#     print('origin: ' + "worldto <|endoftext|>you")
+#     print("encode: " + str(indices))
+#     print("decode: " + revert)

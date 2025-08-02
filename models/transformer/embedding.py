@@ -30,7 +30,7 @@ class Embedding(nn.Module):
         :return: a batch of embedding seq, [batch_size, seq_len, embedding_dim]
         '''
         batch_size, seq_len = x.shape
-        embeddings = torch.empty(batch_size, seq_len, self.embedding_dim)
+        embeddings = torch.empty(batch_size, seq_len, self.embedding_dim, device=self.device, dtype=self.dtype)
 
         for i, seq in enumerate(x):
             for j, token_id in enumerate(seq):
